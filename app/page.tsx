@@ -1,100 +1,116 @@
+
+// ============================================
+// FILE: app/page.tsx (Home/Landing Page)
+// ============================================
+'use client';
+
+import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import Image from 'next/image';
-import { Camera, Monitor, Sparkles, Star } from 'lucide-react';
+import { Camera, Monitor } from 'lucide-react';
 
 export default function Home() {
+  const [currentBg, setCurrentBg] = useState(0);
+  const backgrounds = [
+    '/backgroundimage-1.jpg',
+    '/backgroundimage-2.jpg'
+  ];
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setCurrentBg((prev) => (prev + 1) % backgrounds.length);
+    }, 5000); // Change every 5 seconds
+
+    return () => clearInterval(interval);
+  }, []);
+
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-black relative overflow-hidden flex flex-col items-center justify-center p-8">
-      {/* Golden decorative elements */}
-      <div className="absolute top-0 left-0 w-96 h-96 bg-gradient-to-br from-yellow-400/20 to-transparent rounded-full blur-3xl" />
-      <div className="absolute bottom-0 right-0 w-96 h-96 bg-gradient-to-tl from-yellow-400/20 to-transparent rounded-full blur-3xl" />
-      
-      {/* Left side decorative stars */}
-      <div className="absolute left-8 top-1/4 opacity-30">
-        <Star className="w-12 h-12 text-yellow-400 fill-yellow-400" />
-      </div>
-      <div className="absolute left-16 top-1/3 opacity-20">
-        <Star className="w-8 h-8 text-yellow-400 fill-yellow-400" />
-      </div>
-      <div className="absolute left-12 bottom-1/3 opacity-25">
-        <Sparkles className="w-16 h-16 text-yellow-400" />
-      </div>
-      
-      {/* Right side decorative stars */}
-      <div className="absolute right-8 top-1/3 opacity-30">
-        <Star className="w-12 h-12 text-yellow-400 fill-yellow-400" />
-      </div>
-      <div className="absolute right-16 top-1/4 opacity-20">
-        <Star className="w-8 h-8 text-yellow-400 fill-yellow-400" />
-      </div>
-      <div className="absolute right-12 bottom-1/4 opacity-25">
-        <Sparkles className="w-16 h-16 text-yellow-400" />
+    <div className="relative min-h-screen flex flex-col overflow-hidden">
+      {/* Background Images with Gray Overlay */}
+      <div className="absolute inset-0 z-0">
+        {backgrounds.map((bg, index) => (
+          <div
+            key={bg}
+            className={`absolute inset-0 transition-opacity duration-1000 ${
+              index === currentBg ? 'opacity-100' : 'opacity-0'
+            }`}
+          >
+            <img
+              src={bg}
+              alt="Background"
+              className="w-full h-full object-cover"
+            />
+            {/* Gray overlay for professional look */}
+            <div className="absolute inset-0 bg-gray-900/85" />
+          </div>
+        ))}
       </div>
 
-      {/* Golden accent lines */}
-      <div className="absolute left-0 top-1/2 w-32 h-0.5 bg-gradient-to-r from-yellow-400 to-transparent" />
-      <div className="absolute right-0 top-1/2 w-32 h-0.5 bg-gradient-to-l from-yellow-400 to-transparent" />
-
-      <div className="max-w-7xl w-full relative z-10">
-        {/* Logos Section - Bigger and more prominent */}
-        <div className="flex items-center justify-center gap-16 mb-12 flex-wrap">
-          {/* Prometheus Productions logo */}
-          <div className="w-80 transform hover:scale-105 transition-transform duration-300">
-            <Image 
+      {/* Content */}
+      <div className="relative z-10 flex-1 flex flex-col">
+        {/* Header with Logos */}
+        <div className="w-full py-8 px-8 bg-black/30 backdrop-blur-sm border-b border-white/10">
+          <div className="max-w-7xl mx-auto flex items-center justify-start gap-16">
+            <img 
               src="/logos/Prometheus_logo.png" 
               alt="Prometheus Productions" 
-              width={500} 
-              height={150}
-              className="w-full h-auto drop-shadow-2xl"
+              className="h-24 w-auto"
             />
-          </div>
-          
-          {/* Interstellar Gala logo */}
-          <div className="w-[500px] transform hover:scale-105 transition-transform duration-300">
-            <Image 
+            <img 
               src="/logos/Interstellar_logo.png" 
               alt="Interstellar Gala 2025" 
-              width={700} 
-              height={210}
-              className="w-full h-auto drop-shadow-2xl"
+              className="h-28 w-auto"
             />
           </div>
         </div>
 
-        <div className="text-center mb-16">
-          <h1 className="text-6xl font-bold text-white mb-4 tracking-tight">
-            LED Wall Photo Booth
-          </h1>
-          <p className="text-2xl text-gray-400 font-light tracking-wide">Select your interface</p>
-        </div>
+        {/* Main Content */}
+        <div className="flex-1 flex items-center justify-center px-8 py-16">
+          <div className="max-w-5xl w-full text-center">
+            <h1 className="text-6xl font-bold text-white mb-4 drop-shadow-2xl">
+              LED Wall Photo Booth
+            </h1>
+            <p className="text-xl text-gray-300 mb-16 drop-shadow-lg">
+              Select your interface
+            </p>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-10 max-w-5xl mx-auto">
-          <Link
-            href="/controller"
-            className="group relative bg-gradient-to-br from-yellow-400/10 to-yellow-600/10 hover:from-yellow-400/20 hover:to-yellow-600/20 border-2 border-yellow-400/50 hover:border-yellow-400 text-white rounded-3xl p-20 transition-all duration-300 flex flex-col items-center text-center shadow-2xl hover:shadow-yellow-400/20 overflow-hidden"
-          >
-            <div className="absolute inset-0 bg-gradient-to-br from-yellow-400/0 to-yellow-400/5 group-hover:from-yellow-400/10 group-hover:to-yellow-400/20 transition-all duration-300" />
-            <Camera className="w-28 h-28 mb-8 text-yellow-400 relative z-10 group-hover:scale-110 transition-transform duration-300" />
-            <h2 className="text-4xl font-bold mb-4 relative z-10 text-yellow-400">Controller</h2>
-            <p className="text-gray-400 text-lg relative z-10">Select backgrounds</p>
-          </Link>
+            {/* Cards */}
+            <div className="grid md:grid-cols-2 gap-8 max-w-3xl mx-auto mb-16">
+              {/* Controller Card */}
+              <Link href="/controller">
+                <div className="bg-white/10 backdrop-blur-md border border-white/20 hover:bg-white/20 hover:border-white/40 rounded-xl p-16 transition-all duration-200 cursor-pointer shadow-2xl">
+                  <Camera className="w-24 h-24 mx-auto mb-6 text-white" />
+                  <h2 className="text-3xl font-bold text-white mb-3">
+                    Controller
+                  </h2>
+                  <p className="text-gray-300 text-lg">
+                    Select backgrounds
+                  </p>
+                </div>
+              </Link>
 
-          <Link
-            href="/display"
-            className="group relative bg-gradient-to-br from-yellow-400/10 to-yellow-600/10 hover:from-yellow-400/20 hover:to-yellow-600/20 border-2 border-yellow-400/50 hover:border-yellow-400 text-white rounded-3xl p-20 transition-all duration-300 flex flex-col items-center text-center shadow-2xl hover:shadow-yellow-400/20 overflow-hidden"
-          >
-            <div className="absolute inset-0 bg-gradient-to-br from-yellow-400/0 to-yellow-400/5 group-hover:from-yellow-400/10 group-hover:to-yellow-400/20 transition-all duration-300" />
-            <Monitor className="w-28 h-28 mb-8 text-yellow-400 relative z-10 group-hover:scale-110 transition-transform duration-300" />
-            <h2 className="text-4xl font-bold mb-4 relative z-10 text-yellow-400">Display</h2>
-            <p className="text-gray-400 text-lg relative z-10">Fullscreen for OBS</p>
-          </Link>
-        </div>
+              {/* Display Card */}
+              <Link href="/display">
+                <div className="bg-white/10 backdrop-blur-md border border-white/20 hover:bg-white/20 hover:border-white/40 rounded-xl p-16 transition-all duration-200 cursor-pointer shadow-2xl">
+                  <Monitor className="w-24 h-24 mx-auto mb-6 text-white" />
+                  <h2 className="text-3xl font-bold text-white mb-3">
+                    Display
+                  </h2>
+                  <p className="text-gray-300 text-lg">
+                    Fullscreen for OBS
+                  </p>
+                </div>
+              </Link>
+            </div>
 
-        <div className="mt-16 p-8 bg-gradient-to-r from-yellow-400/10 via-yellow-400/5 to-yellow-400/10 rounded-2xl max-w-5xl mx-auto border border-yellow-400/30 backdrop-blur-sm">
-          <p className="text-gray-300 leading-relaxed text-center text-lg">
-            <strong className="text-yellow-400">Setup:</strong> Open Controller on your device, open Display in another window (fullscreen), 
-            then capture Display window in OBS.
-          </p>
+            {/* Instructions */}
+            <div className="max-w-2xl mx-auto">
+              <div className="bg-black/40 backdrop-blur-md border border-white/20 rounded-lg p-6">
+                <p className="text-gray-200 leading-relaxed">
+                  <strong className="text-white">Setup:</strong> Open Controller to select backgrounds. Open Display in another window (press F11), then capture it in OBS.
+                </p>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     </div>
