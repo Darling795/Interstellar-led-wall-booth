@@ -1,65 +1,102 @@
-import Image from "next/image";
+import Link from 'next/link';
+import Image from 'next/image';
+import { Camera, Monitor, Sparkles, Star } from 'lucide-react';
 
 export default function Home() {
   return (
-    <div className="flex min-h-screen items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex min-h-screen w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
+    <div className="min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-black relative overflow-hidden flex flex-col items-center justify-center p-8">
+      {/* Golden decorative elements */}
+      <div className="absolute top-0 left-0 w-96 h-96 bg-gradient-to-br from-yellow-400/20 to-transparent rounded-full blur-3xl" />
+      <div className="absolute bottom-0 right-0 w-96 h-96 bg-gradient-to-tl from-yellow-400/20 to-transparent rounded-full blur-3xl" />
+      
+      {/* Left side decorative stars */}
+      <div className="absolute left-8 top-1/4 opacity-30">
+        <Star className="w-12 h-12 text-yellow-400 fill-yellow-400" />
+      </div>
+      <div className="absolute left-16 top-1/3 opacity-20">
+        <Star className="w-8 h-8 text-yellow-400 fill-yellow-400" />
+      </div>
+      <div className="absolute left-12 bottom-1/3 opacity-25">
+        <Sparkles className="w-16 h-16 text-yellow-400" />
+      </div>
+      
+      {/* Right side decorative stars */}
+      <div className="absolute right-8 top-1/3 opacity-30">
+        <Star className="w-12 h-12 text-yellow-400 fill-yellow-400" />
+      </div>
+      <div className="absolute right-16 top-1/4 opacity-20">
+        <Star className="w-8 h-8 text-yellow-400 fill-yellow-400" />
+      </div>
+      <div className="absolute right-12 bottom-1/4 opacity-25">
+        <Sparkles className="w-16 h-16 text-yellow-400" />
+      </div>
+
+      {/* Golden accent lines */}
+      <div className="absolute left-0 top-1/2 w-32 h-0.5 bg-gradient-to-r from-yellow-400 to-transparent" />
+      <div className="absolute right-0 top-1/2 w-32 h-0.5 bg-gradient-to-l from-yellow-400 to-transparent" />
+
+      <div className="max-w-7xl w-full relative z-10">
+        {/* Logos Section - Bigger and more prominent */}
+        <div className="flex items-center justify-center gap-16 mb-12 flex-wrap">
+          {/* Prometheus Productions logo */}
+          <div className="w-80 transform hover:scale-105 transition-transform duration-300">
+            <Image 
+              src="/logos/Prometheus_logo.png" 
+              alt="Prometheus Productions" 
+              width={500} 
+              height={150}
+              className="w-full h-auto drop-shadow-2xl"
+            />
+          </div>
+          
+          {/* Interstellar Gala logo */}
+          <div className="w-[500px] transform hover:scale-105 transition-transform duration-300">
+            <Image 
+              src="/logos/Interstellar_logo.png" 
+              alt="Interstellar Gala 2025" 
+              width={700} 
+              height={210}
+              className="w-full h-auto drop-shadow-2xl"
+            />
+          </div>
+        </div>
+
+        <div className="text-center mb-16">
+          <h1 className="text-6xl font-bold text-white mb-4 tracking-tight">
+            LED Wall Photo Booth
           </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
+          <p className="text-2xl text-gray-400 font-light tracking-wide">Select your interface</p>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-10 max-w-5xl mx-auto">
+          <Link
+            href="/controller"
+            className="group relative bg-gradient-to-br from-yellow-400/10 to-yellow-600/10 hover:from-yellow-400/20 hover:to-yellow-600/20 border-2 border-yellow-400/50 hover:border-yellow-400 text-white rounded-3xl p-20 transition-all duration-300 flex flex-col items-center text-center shadow-2xl hover:shadow-yellow-400/20 overflow-hidden"
+          >
+            <div className="absolute inset-0 bg-gradient-to-br from-yellow-400/0 to-yellow-400/5 group-hover:from-yellow-400/10 group-hover:to-yellow-400/20 transition-all duration-300" />
+            <Camera className="w-28 h-28 mb-8 text-yellow-400 relative z-10 group-hover:scale-110 transition-transform duration-300" />
+            <h2 className="text-4xl font-bold mb-4 relative z-10 text-yellow-400">Controller</h2>
+            <p className="text-gray-400 text-lg relative z-10">Select backgrounds</p>
+          </Link>
+
+          <Link
+            href="/display"
+            className="group relative bg-gradient-to-br from-yellow-400/10 to-yellow-600/10 hover:from-yellow-400/20 hover:to-yellow-600/20 border-2 border-yellow-400/50 hover:border-yellow-400 text-white rounded-3xl p-20 transition-all duration-300 flex flex-col items-center text-center shadow-2xl hover:shadow-yellow-400/20 overflow-hidden"
+          >
+            <div className="absolute inset-0 bg-gradient-to-br from-yellow-400/0 to-yellow-400/5 group-hover:from-yellow-400/10 group-hover:to-yellow-400/20 transition-all duration-300" />
+            <Monitor className="w-28 h-28 mb-8 text-yellow-400 relative z-10 group-hover:scale-110 transition-transform duration-300" />
+            <h2 className="text-4xl font-bold mb-4 relative z-10 text-yellow-400">Display</h2>
+            <p className="text-gray-400 text-lg relative z-10">Fullscreen for OBS</p>
+          </Link>
+        </div>
+
+        <div className="mt-16 p-8 bg-gradient-to-r from-yellow-400/10 via-yellow-400/5 to-yellow-400/10 rounded-2xl max-w-5xl mx-auto border border-yellow-400/30 backdrop-blur-sm">
+          <p className="text-gray-300 leading-relaxed text-center text-lg">
+            <strong className="text-yellow-400">Setup:</strong> Open Controller on your device, open Display in another window (fullscreen), 
+            then capture Display window in OBS.
           </p>
         </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
-      </main>
+      </div>
     </div>
   );
 }
