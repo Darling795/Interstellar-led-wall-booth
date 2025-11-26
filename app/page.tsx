@@ -1,7 +1,3 @@
-
-// ============================================
-// FILE: app/page.tsx (Home/Landing Page)
-// ============================================
 'use client';
 
 import { useState, useEffect } from 'react';
@@ -18,28 +14,31 @@ export default function Home() {
   useEffect(() => {
     const interval = setInterval(() => {
       setCurrentBg((prev) => (prev + 1) % backgrounds.length);
-    }, 5000); // Change every 5 seconds
+    }, 7000);
 
     return () => clearInterval(interval);
   }, []);
 
   return (
     <div className="relative min-h-screen flex flex-col overflow-hidden">
-      {/* Background Images with Gray Overlay */}
+      {/* Background Images - PROPER CROSSFADE */}
       <div className="absolute inset-0 z-0">
         {backgrounds.map((bg, index) => (
           <div
             key={bg}
-            className={`absolute inset-0 transition-opacity duration-1000 ${
-              index === currentBg ? 'opacity-100' : 'opacity-0'
-            }`}
+            className="absolute inset-0"
+            style={{
+              opacity: index === currentBg ? 1 : 0,
+              transition: 'opacity 1000ms ease-in-out',
+              zIndex: index === currentBg ? 1 : 0
+            }}
           >
             <img
               src={bg}
               alt="Background"
               className="w-full h-full object-cover"
             />
-            {/* Gray overlay for professional look */}
+            {/* Gray overlay */}
             <div className="absolute inset-0 bg-gray-900/85" />
           </div>
         ))}
