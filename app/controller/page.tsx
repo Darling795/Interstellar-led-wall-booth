@@ -1,55 +1,71 @@
-// ============================================
-// FILE: app/controller/page.tsx
-// ============================================
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, Check } from 'lucide-react';
+import { ArrowLeft, Check, Wifi, WifiOff } from 'lucide-react';
 import { backgrounds } from '../background';
 
-const CHANNEL_NAME = 'led-wall-sync';
+const POLL_INTERVAL = 1000;
 
 export default function Controller() {
   const [selectedBg, setSelectedBg] = useState(backgrounds[0].id);
+  const [isConnected, setIsConnected] = useState(true);
   const [currentBgImage, setCurrentBgImage] = useState(0);
+  
   const bgImages = [
     '/backgroundimage-1.jpg',
     '/backgroundimage-2.jpg'
   ];
 
-  useEffect(() => {
-    const channel = new BroadcastChannel(CHANNEL_NAME);
-    
-    channel.onmessage = (event) => {
-      if (event.data.type === 'BACKGROUND_CHANGE') {
-        setSelectedBg(event.data.backgroundId);
+  const fetchBackground = useCallback(async () => {
+    try {
+      const response = await fetch('/api/background');
+      if (response.ok) {
+        const data = await response.json();
+        setSelectedBg(data.backgroundId);
+        setIsConnected(true);
       }
-    };
-
-    return () => channel.close();
+    } catch (error) {
+      console.error('Failed to fetch background:', error);
+      setIsConnected(false);
+    }
   }, []);
+
+  useEffect(() => {
+    fetchBackground();
+    const interval = setInterval(fetchBackground, POLL_INTERVAL);
+    return () => clearInterval(interval);
+  }, [fetchBackground]);
 
   useEffect(() => {
     const interval = setInterval(() => {
       setCurrentBgImage((prev) => (prev + 1) % bgImages.length);
     }, 5000);
-
     return () => clearInterval(interval);
   }, []);
 
-  const handleBackgroundSelect = (bgId: string) => {
+  const handleBackgroundSelect = async (bgId: string) => {
     setSelectedBg(bgId);
-    const channel = new BroadcastChannel(CHANNEL_NAME);
-    channel.postMessage({ type: 'BACKGROUND_CHANGE', backgroundId: bgId });
-    channel.close();
+    
+    try {
+      const response = await fetch('/api/background', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ backgroundId: bgId })
+      });
+      
+      if (!response.ok) throw new Error('Failed to update');
+      setIsConnected(true);
+    } catch (error) {
+      console.error('Failed to set background:', error);
+      setIsConnected(false);
+    }
   };
 
   const currentBg = backgrounds.find(bg => bg.id === selectedBg);
 
   return (
     <div className="relative min-h-screen">
-      {/* Background Images with Gray Overlay */}
       <div className="fixed inset-0 z-0">
         {bgImages.map((bg, index) => (
           <div
@@ -68,9 +84,7 @@ export default function Controller() {
         ))}
       </div>
 
-      {/* Content */}
       <div className="relative z-10">
-        {/* Header */}
         <div className="bg-black/30 backdrop-blur-sm border-b border-white/10">
           <div className="max-w-7xl mx-auto px-6 py-6 flex items-center justify-between">
             <div className="flex items-center gap-16">
@@ -85,25 +99,32 @@ export default function Controller() {
                 className="h-24 w-auto"
               />
             </div>
-            <Link 
-              href="/"
-              className="flex items-center gap-2 text-gray-300 hover:text-white text-sm font-medium transition-colors"
-            >
-              <ArrowLeft className="w-4 h-4" />
-              Back
-            </Link>
+            <div className="flex items-center gap-6">
+              <div className={`flex items-center gap-2 px-3 py-1.5 rounded-full ${
+                isConnected ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'
+              }`}>
+                {isConnected ? <Wifi className="w-4 h-4" /> : <WifiOff className="w-4 h-4" />}
+                <span className="text-sm font-medium">
+                  {isConnected ? 'Connected' : 'Disconnected'}
+                </span>
+              </div>
+              
+              <Link 
+                href="/"
+                className="flex items-center gap-2 text-gray-300 hover:text-white text-sm font-medium transition-colors"
+              >
+                <ArrowLeft className="w-4 h-4" />
+                Back
+              </Link>
+            </div>
           </div>
         </div>
 
-        {/* Content */}
         <div className="max-w-7xl mx-auto px-6 py-8">
-          {/* Current Background Preview */}
           <div className="mb-12">
             <div className="flex items-center gap-2 mb-4">
               <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse" />
-              <h2 className="text-lg font-semibold text-white">
-                Currently Displaying
-              </h2>
+              <h2 className="text-lg font-semibold text-white">Currently Displaying</h2>
             </div>
             
             <div className="bg-white/10 backdrop-blur-md rounded-xl overflow-hidden border border-white/20 shadow-2xl">
@@ -132,10 +153,7 @@ export default function Controller() {
             </div>
           </div>
 
-          {/* Background Selection Grid */}
-          <h2 className="text-lg font-semibold text-white mb-4">
-            Select Background
-          </h2>
+          <h2 className="text-lg font-semibold text-white mb-4">Select Background</h2>
           
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
             {backgrounds.map((bg) => (
@@ -176,9 +194,7 @@ export default function Controller() {
                 </div>
                 
                 <div className="px-3 py-2 bg-black/60 backdrop-blur-sm border-t border-white/10">
-                  <p className="text-sm font-medium text-white truncate">
-                    {bg.name}
-                  </p>
+                  <p className="text-sm font-medium text-white truncate">{bg.name}</p>
                 </div>
               </button>
             ))}
