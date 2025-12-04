@@ -2,14 +2,16 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, Check, Wifi, WifiOff } from 'lucide-react';
-import { backgrounds } from '../background';
+import { ArrowLeft, Check, Wifi, WifiOff, ChevronLeft } from 'lucide-react';
+import { backgrounds, categories, getBackgroundsByCategory } from '../background';
 
-const POLL_INTERVAL = 1000;
+const POLL_INTERVAL = 2000; // Increased from 1000 to reduce API calls
 
 export default function Controller() {
   const [selectedBg, setSelectedBg] = useState(backgrounds[0].id);
+  const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [isConnected, setIsConnected] = useState(true);
+  const [isUpdating, setIsUpdating] = useState(false);
   const [currentBgImage, setCurrentBgImage] = useState(0);
   
   const bgImages = [
@@ -18,6 +20,7 @@ export default function Controller() {
   ];
 
   const fetchBackground = useCallback(async () => {
+    if (isUpdating) return; // Don't fetch while updating
     try {
       const response = await fetch('/api/background');
       if (response.ok) {
@@ -29,7 +32,7 @@ export default function Controller() {
       console.error('Failed to fetch background:', error);
       setIsConnected(false);
     }
-  }, []);
+  }, [isUpdating]);
 
   useEffect(() => {
     fetchBackground();
@@ -45,7 +48,9 @@ export default function Controller() {
   }, []);
 
   const handleBackgroundSelect = async (bgId: string) => {
+    // Immediately update UI
     setSelectedBg(bgId);
+    setIsUpdating(true);
     
     try {
       const response = await fetch('/api/background', {
@@ -59,13 +64,18 @@ export default function Controller() {
     } catch (error) {
       console.error('Failed to set background:', error);
       setIsConnected(false);
+    } finally {
+      setIsUpdating(false);
     }
   };
 
   const currentBg = backgrounds.find(bg => bg.id === selectedBg);
+  const categoryBackgrounds = selectedCategory ? getBackgroundsByCategory(selectedCategory) : [];
+  const selectedCategoryName = categories.find(c => c.id === selectedCategory)?.name;
 
   return (
     <div className="relative min-h-screen">
+      {/* Background */}
       <div className="fixed inset-0 z-0">
         {bgImages.map((bg, index) => (
           <div
@@ -85,6 +95,7 @@ export default function Controller() {
       </div>
 
       <div className="relative z-10">
+        {/* Header */}
         <div className="bg-black/30 backdrop-blur-sm border-b border-white/10">
           <div className="max-w-7xl mx-auto px-6 py-6 flex items-center justify-between">
             <div className="flex items-center gap-16">
@@ -121,6 +132,7 @@ export default function Controller() {
         </div>
 
         <div className="max-w-7xl mx-auto px-6 py-8">
+          {/* Currently Displaying */}
           <div className="mb-12">
             <div className="flex items-center gap-2 mb-4">
               <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse" />
@@ -136,10 +148,16 @@ export default function Controller() {
                     loop
                     muted
                     playsInline
-                    className="w-full h-full object-cover"
+                    className="w-full h-full object-contain"
                   >
                     <source src={currentBg.src} type="video/mp4" />
                   </video>
+                ) : currentBg?.type === 'image' ? (
+                  <img
+                    src={currentBg.src}
+                    alt={currentBg.name}
+                    className="w-full h-full object-contain"
+                  />
                 ) : (
                   <div 
                     className="w-full h-full"
@@ -153,52 +171,94 @@ export default function Controller() {
             </div>
           </div>
 
-          <h2 className="text-lg font-semibold text-white mb-4">Select Background</h2>
-          
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-            {backgrounds.map((bg) => (
-              <button
-                key={bg.id}
-                onClick={() => handleBackgroundSelect(bg.id)}
-                className={`group relative rounded-lg overflow-hidden transition-all ${
-                  selectedBg === bg.id 
-                    ? 'ring-2 ring-white shadow-2xl shadow-white/20' 
-                    : 'ring-1 ring-white/30 hover:ring-white/60'
-                }`}
-              >
-                <div className="relative w-full aspect-video bg-black">
-                  {bg.type === 'video' ? (
-                    <video
-                      autoPlay
-                      loop
-                      muted
-                      playsInline
-                      className="w-full h-full object-cover"
-                    >
-                      <source src={bg.src} type="video/mp4" />
-                    </video>
-                  ) : (
-                    <div 
-                      className="w-full h-full"
-                      style={{ background: bg.style }}
-                    />
-                  )}
+          {/* Selection Area */}
+          {selectedCategory === null ? (
+            <>
+              {/* Movie Categories */}
+              <h2 className="text-lg font-semibold text-white mb-4">Select Movie Theme</h2>
+              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                {categories.map((category) => {
+                  const categoryBgs = getBackgroundsByCategory(category.id);
+                  const firstBg = categoryBgs[0];
                   
-                  {selectedBg === bg.id && (
-                    <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
-                      <div className="bg-white rounded-full p-2">
-                        <Check className="w-6 h-6 text-gray-900" />
+                  return (
+                    <button
+                      key={category.id}
+                      onClick={() => setSelectedCategory(category.id)}
+                      className="group relative rounded-lg overflow-hidden transition-all ring-1 ring-white/30 hover:ring-white/60 hover:scale-[1.02] active:scale-[0.98]"
+                    >
+                      <div className="relative w-full aspect-video bg-black">
+                        {firstBg?.type === 'image' && (
+                          <img
+                            src={firstBg.src}
+                            alt={category.name}
+                            loading="lazy"
+                            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                          />
+                        )}
+                        <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent" />
                       </div>
+                      
+                      <div className="absolute bottom-0 left-0 right-0 px-4 py-3">
+                        <p className="text-base font-semibold text-white">{category.name}</p>
+                        <p className="text-xs text-gray-300">{categoryBgs.length} backgrounds</p>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </>
+          ) : (
+            <>
+              {/* Image Selection within Category */}
+              <div className="flex items-center gap-4 mb-4">
+                <button
+                  onClick={() => setSelectedCategory(null)}
+                  className="flex items-center gap-2 text-gray-300 hover:text-white transition-colors"
+                >
+                  <ChevronLeft className="w-5 h-5" />
+                  <span className="font-medium">Back to Movies</span>
+                </button>
+                <h2 className="text-lg font-semibold text-white">{selectedCategoryName}</h2>
+              </div>
+
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                {categoryBackgrounds.map((bg) => (
+                  <button
+                    key={bg.id}
+                    onClick={() => handleBackgroundSelect(bg.id)}
+                    disabled={isUpdating}
+                    className={`group relative rounded-lg overflow-hidden transition-all active:scale-[0.98] ${
+                      selectedBg === bg.id 
+                        ? 'ring-2 ring-white shadow-2xl shadow-white/20' 
+                        : 'ring-1 ring-white/30 hover:ring-white/60'
+                    } ${isUpdating ? 'opacity-50 cursor-wait' : ''}`}
+                  >
+                    <div className="relative w-full aspect-video bg-black">
+                      <img
+                        src={bg.src}
+                        alt={bg.name}
+                        loading="lazy"
+                        className="w-full h-full object-cover"
+                      />
+                      
+                      {selectedBg === bg.id && (
+                        <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
+                          <div className="bg-white rounded-full p-2">
+                            <Check className="w-6 h-6 text-gray-900" />
+                          </div>
+                        </div>
+                      )}
                     </div>
-                  )}
-                </div>
-                
-                <div className="px-3 py-2 bg-black/60 backdrop-blur-sm border-t border-white/10">
-                  <p className="text-sm font-medium text-white truncate">{bg.name}</p>
-                </div>
-              </button>
-            ))}
-          </div>
+                    
+                    <div className="px-3 py-2 bg-black/60 backdrop-blur-sm border-t border-white/10">
+                      <p className="text-sm font-medium text-white truncate">{bg.name}</p>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
         </div>
       </div>
     </div>

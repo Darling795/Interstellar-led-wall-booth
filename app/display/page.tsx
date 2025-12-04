@@ -55,10 +55,17 @@ export default function Display() {
             loop
             muted
             playsInline
-            className="absolute inset-0 w-full h-full object-cover"
+            className="absolute inset-0 w-full h-full object-contain"
           >
             <source src={currentBg.src} type="video/mp4" />
           </video>
+        ) : currentBg?.type === 'image' ? (
+          <img
+            key={currentBg.src}
+            src={currentBg.src}
+            alt={currentBg.name}
+            className="absolute inset-0 w-full h-full object-contain"
+          />
         ) : (
           <div 
             className="absolute inset-0 w-full h-full"
