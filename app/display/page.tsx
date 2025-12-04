@@ -6,115 +6,243 @@ import { backgrounds } from '../background';
 const POLL_INTERVAL = 500;
 
 export default function Display() {
-  const [selectedBg, setSelectedBg] = useState<string | null>(null);
-  const [displayedBg, setDisplayedBg] = useState<string | null>(null);
+  const [currentBgId, setCurrentBgId] = useState<string | null>(null);
   const [isTransitioning, setIsTransitioning] = useState(false);
-  const selectedBgRef = useRef<string | null>(null);
+  const [isInitializing, setIsInitializing] = useState(true);
+  const [loadingProgress, setLoadingProgress] = useState(0);
+  const [connectionStatus, setConnectionStatus] = useState<'connecting' | 'connected' | 'error'>('connecting');
+  
+  const currentBgIdRef = useRef<string | null>(null);
+  const isTransitioningRef = useRef(false);
   const loadedImagesRef = useRef<Set<string>>(new Set());
-  const isPreloadingRef = useRef(false);
+  const pollingRef = useRef<NodeJS.Timeout | null>(null);
+  const retryCountRef = useRef(0);
 
-  // Preload an image and return a promise
+  // Preload an image with progress
   const preloadImage = useCallback((src: string): Promise<void> => {
-    return new Promise((resolve, reject) => {
+    return new Promise((resolve) => {
       if (loadedImagesRef.current.has(src)) {
         resolve();
         return;
       }
+      
       const img = new Image();
       img.onload = () => {
         loadedImagesRef.current.add(src);
         resolve();
       };
       img.onerror = () => {
-        // Still resolve to prevent blocking
         resolve();
       };
       img.src = src;
     });
   }, []);
 
-  // Handle background change with preloading
-  const handleBackgroundChange = useCallback(async (bgId: string) => {
-    if (isPreloadingRef.current) return;
+  // Switch to new background with transition
+  const switchBackground = useCallback(async (newBgId: string) => {
+    if (isTransitioningRef.current) return;
+    if (newBgId === currentBgIdRef.current) return;
     
-    const newBg = backgrounds.find(bg => bg.id === bgId);
+    const newBg = backgrounds.find(bg => bg.id === newBgId);
     if (!newBg) return;
 
-    isPreloadingRef.current = true;
-
+    isTransitioningRef.current = true;
+    
+    // Preload if it's an image
     if (newBg.type === 'image' && newBg.src) {
-      // Start fade out
-      setIsTransitioning(true);
-      
-      // Preload the image
       await preloadImage(newBg.src);
-      
-      // Small delay for fade out to complete
-      await new Promise(resolve => setTimeout(resolve, 300));
-      
-      // Switch background
-      setDisplayedBg(bgId);
-      
-      // Small delay then fade in
-      await new Promise(resolve => setTimeout(resolve, 50));
-      setIsTransitioning(false);
-    } else {
-      // For non-image types (video, gradient)
-      setIsTransitioning(true);
-      await new Promise(resolve => setTimeout(resolve, 300));
-      setDisplayedBg(bgId);
-      await new Promise(resolve => setTimeout(resolve, 50));
-      setIsTransitioning(false);
     }
 
-    isPreloadingRef.current = false;
+    // Start transition
+    setIsTransitioning(true);
+    
+    // Wait for fade out
+    await new Promise(resolve => setTimeout(resolve, 300));
+    
+    // Switch background
+    setCurrentBgId(newBgId);
+    currentBgIdRef.current = newBgId;
+    
+    // Wait a frame then fade in
+    await new Promise(resolve => setTimeout(resolve, 50));
+    setIsTransitioning(false);
+    
+    isTransitioningRef.current = false;
   }, [preloadImage]);
 
-  // Initial load - preload first image
+  // Fetch current background from API
+  const fetchBackground = useCallback(async () => {
+    if (isTransitioningRef.current) return;
+    
+    try {
+      const response = await fetch('/api/background', {
+        cache: 'no-store',
+        headers: {
+          'Cache-Control': 'no-cache',
+        }
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        if (data.backgroundId && data.backgroundId !== currentBgIdRef.current) {
+          switchBackground(data.backgroundId);
+        }
+        setConnectionStatus('connected');
+        retryCountRef.current = 0;
+      }
+    } catch (error) {
+      console.error('Failed to fetch background:', error);
+      retryCountRef.current++;
+      if (retryCountRef.current > 5) {
+        setConnectionStatus('error');
+      }
+    }
+  }, [switchBackground]);
+
+  // Initial load
   useEffect(() => {
-    const initializeDisplay = async () => {
+    const initialize = async () => {
+      setLoadingProgress(10);
+      
       const initialBg = backgrounds[0];
-      if (initialBg?.type === 'image' && initialBg.src) {
+      
+      // Preload first image
+      if (initialBg.type === 'image' && initialBg.src) {
+        setLoadingProgress(30);
         await preloadImage(initialBg.src);
       }
-      setSelectedBg(initialBg.id);
-      setDisplayedBg(initialBg.id);
-      selectedBgRef.current = initialBg.id;
-    };
-
-    initializeDisplay();
-  }, [preloadImage]);
-
-  // Polling for background changes
-  useEffect(() => {
-    // Don't start polling until initial load is complete
-    if (displayedBg === null) return;
-
-    const fetchBackground = async () => {
+      
+      setLoadingProgress(50);
+      
+      // Fetch current background from API
       try {
-        const response = await fetch('/api/background');
+        setConnectionStatus('connecting');
+        const response = await fetch('/api/background', {
+          cache: 'no-store',
+        });
+        
+        setLoadingProgress(70);
+        
         if (response.ok) {
           const data = await response.json();
-          if (data.backgroundId && data.backgroundId !== selectedBgRef.current) {
-            selectedBgRef.current = data.backgroundId;
-            setSelectedBg(data.backgroundId);
-            handleBackgroundChange(data.backgroundId);
+          const bgId = data.backgroundId || initialBg.id;
+          const bg = backgrounds.find(b => b.id === bgId);
+          
+          // Preload the actual current background
+          if (bg?.type === 'image' && bg.src) {
+            setLoadingProgress(85);
+            await preloadImage(bg.src);
           }
+          
+          setLoadingProgress(100);
+          setCurrentBgId(bgId);
+          currentBgIdRef.current = bgId;
+          setConnectionStatus('connected');
+        } else {
+          setLoadingProgress(100);
+          setCurrentBgId(initialBg.id);
+          currentBgIdRef.current = initialBg.id;
         }
-      } catch (error) {
-        console.error('Failed to fetch background:', error);
+      } catch {
+        setLoadingProgress(100);
+        setCurrentBgId(initialBg.id);
+        currentBgIdRef.current = initialBg.id;
+        setConnectionStatus('error');
       }
+      
+      // Small delay to show 100% before hiding
+      await new Promise(resolve => setTimeout(resolve, 500));
+      setIsInitializing(false);
     };
 
-    const interval = setInterval(fetchBackground, POLL_INTERVAL);
-    return () => clearInterval(interval);
-  }, [displayedBg, handleBackgroundChange]);
+    initialize();
+  }, [preloadImage]);
 
-  const currentBg = displayedBg ? backgrounds.find(bg => bg.id === displayedBg) : null;
+  // Start polling after initial load
+  useEffect(() => {
+    if (currentBgId === null || isInitializing) return;
 
-  // Show black screen while initial image loads
+    pollingRef.current = setInterval(fetchBackground, POLL_INTERVAL);
+    
+    return () => {
+      if (pollingRef.current) {
+        clearInterval(pollingRef.current);
+        pollingRef.current = null;
+      }
+    };
+  }, [currentBgId, isInitializing, fetchBackground]);
+
+  const currentBg = currentBgId ? backgrounds.find(bg => bg.id === currentBgId) : null;
+
+  // Loading state with progress
+  if (isInitializing) {
+    return (
+      <div className="w-screen h-screen bg-black flex items-center justify-center">
+        <div className="text-center">
+          {/* Logo or branding */}
+          <div className="mb-8">
+            <div className="w-20 h-20 mx-auto mb-4 rounded-full bg-white/10 flex items-center justify-center">
+              <svg 
+                className="w-10 h-10 text-white animate-pulse" 
+                fill="none" 
+                stroke="currentColor" 
+                viewBox="0 0 24 24"
+              >
+                <path 
+                  strokeLinecap="round" 
+                  strokeLinejoin="round" 
+                  strokeWidth={2} 
+                  d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" 
+                />
+              </svg>
+            </div>
+            <h1 className="text-white text-xl font-semibold mb-1">AR Display</h1>
+            <p className="text-white/50 text-sm">Initializing experience...</p>
+          </div>
+          
+          {/* Progress bar */}
+          <div className="w-64 mx-auto">
+            <div className="h-1 bg-white/10 rounded-full overflow-hidden">
+              <div 
+                className="h-full bg-white transition-all duration-300 ease-out rounded-full"
+                style={{ width: `${loadingProgress}%` }}
+              />
+            </div>
+            <p className="text-white/30 text-xs mt-2">{loadingProgress}%</p>
+          </div>
+          
+          {/* Connection status */}
+          <div className="mt-6">
+            <div className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-xs ${
+              connectionStatus === 'connecting' ? 'bg-yellow-500/20 text-yellow-400' :
+              connectionStatus === 'connected' ? 'bg-green-500/20 text-green-400' :
+              'bg-red-500/20 text-red-400'
+            }`}>
+              <div className={`w-2 h-2 rounded-full ${
+                connectionStatus === 'connecting' ? 'bg-yellow-400 animate-pulse' :
+                connectionStatus === 'connected' ? 'bg-green-400' :
+                'bg-red-400'
+              }`} />
+              {connectionStatus === 'connecting' ? 'Connecting to server...' :
+               connectionStatus === 'connected' ? 'Connected' :
+               'Connection error'}
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // No background loaded state
   if (!currentBg) {
-    return <div className="w-screen h-screen bg-black" />;
+    return (
+      <div className="w-screen h-screen bg-black flex items-center justify-center">
+        <div className="text-center">
+          <div className="w-12 h-12 border-4 border-white/20 border-t-white rounded-full animate-spin mx-auto mb-4" />
+          <p className="text-white/50 text-sm">Loading background...</p>
+        </div>
+      </div>
+    );
   }
 
   return (
@@ -126,7 +254,7 @@ export default function Display() {
       >
         {currentBg.type === 'video' ? (
           <video
-            key={currentBg.src}
+            key={currentBg.id}
             autoPlay
             loop
             muted
@@ -137,7 +265,7 @@ export default function Display() {
           </video>
         ) : currentBg.type === 'image' ? (
           <img
-            key={currentBg.src}
+            key={currentBg.id}
             src={currentBg.src}
             alt={currentBg.name}
             className="absolute inset-0 w-full h-full object-contain"
@@ -149,6 +277,16 @@ export default function Display() {
           />
         )}
       </div>
+      
+      {/* Connection error indicator (subtle, in corner) */}
+      {connectionStatus === 'error' && (
+        <div className="absolute top-4 right-4 z-10">
+          <div className="bg-red-500/20 backdrop-blur-sm px-3 py-1.5 rounded-full flex items-center gap-2">
+            <div className="w-2 h-2 bg-red-400 rounded-full animate-pulse" />
+            <span className="text-red-400 text-xs">Reconnecting...</span>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

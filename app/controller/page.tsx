@@ -1,17 +1,61 @@
 'use client';
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, Check, Wifi, WifiOff, ChevronLeft, Lock } from 'lucide-react';
+import { ArrowLeft, Check, Wifi, WifiOff, ChevronLeft, Lock, Loader2 } from 'lucide-react';
 import { backgrounds, categories, getBackgroundsByCategory } from '../background';
 
 const POLL_INTERVAL = 2000;
 const PASSWORD = '12345';
 
+// Skeleton component for loading states
+const Skeleton = ({ className = '' }: { className?: string }) => (
+  <div className={`animate-pulse bg-white/10 rounded ${className}`} />
+);
+
+// Image with loading state
+const LoadingImage = ({ 
+  src, 
+  alt, 
+  className = '',
+  containerClassName = ''
+}: { 
+  src: string; 
+  alt: string; 
+  className?: string;
+  containerClassName?: string;
+}) => {
+  const [isLoaded, setIsLoaded] = useState(false);
+  const [hasError, setHasError] = useState(false);
+
+  return (
+    <div className={`relative ${containerClassName}`}>
+      {!isLoaded && !hasError && (
+        <div className="absolute inset-0 flex items-center justify-center bg-black/50">
+          <Loader2 className="w-6 h-6 text-white/50 animate-spin" />
+        </div>
+      )}
+      {hasError && (
+        <div className="absolute inset-0 flex items-center justify-center bg-black/50">
+          <span className="text-white/50 text-xs">Failed to load</span>
+        </div>
+      )}
+      <img
+        src={src}
+        alt={alt}
+        className={`${className} ${isLoaded ? 'opacity-100' : 'opacity-0'} transition-opacity duration-300`}
+        onLoad={() => setIsLoaded(true)}
+        onError={() => setHasError(true)}
+      />
+    </div>
+  );
+};
+
 export default function Controller() {
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null);
   const [password, setPassword] = useState('');
   const [passwordError, setPasswordError] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   
   const [selectedBg, setSelectedBg] = useState(backgrounds[0].id);
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
@@ -19,25 +63,41 @@ export default function Controller() {
   const [isUpdating, setIsUpdating] = useState(false);
   const [currentBgImage, setCurrentBgImage] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
+  const [isFetchingInitial, setIsFetchingInitial] = useState(true);
+  const [updatingBgId, setUpdatingBgId] = useState<string | null>(null);
   
   const isUpdatingRef = useRef(false);
-  const isMountedRef = useRef(true);
+  const selectedBgRef = useRef(selectedBg);
+  const pollingRef = useRef<NodeJS.Timeout | null>(null);
+  const bgRotationRef = useRef<NodeJS.Timeout | null>(null);
   
   const bgImages = [
     '/backgroundimage-1.jpg',
     '/backgroundimage-2.jpg'
   ];
 
-  // Check if already authenticated (session storage)
+  // Keep ref in sync with state
   useEffect(() => {
-    const savedAuth = sessionStorage.getItem('controller-auth');
-    if (savedAuth === 'true') {
-      setIsAuthenticated(true);
-    }
+    selectedBgRef.current = selectedBg;
+  }, [selectedBg]);
+
+  // Check authentication on mount
+  useEffect(() => {
+    // Small delay to prevent flash
+    const timer = setTimeout(() => {
+      const savedAuth = sessionStorage.getItem('controller-auth');
+      setIsAuthenticated(savedAuth === 'true');
+    }, 100);
+    return () => clearTimeout(timer);
   }, []);
 
-  const handlePasswordSubmit = (e: React.FormEvent) => {
+  const handlePasswordSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setIsSubmitting(true);
+    
+    // Simulate brief delay for UX
+    await new Promise(resolve => setTimeout(resolve, 300));
+    
     if (password === PASSWORD) {
       setIsAuthenticated(true);
       setPasswordError(false);
@@ -46,6 +106,7 @@ export default function Controller() {
       setPasswordError(true);
       setPassword('');
     }
+    setIsSubmitting(false);
   };
 
   // Preload background images
@@ -54,58 +115,59 @@ export default function Controller() {
 
     let loadedCount = 0;
     const totalImages = bgImages.length;
+    let isCancelled = false;
+
+    const checkComplete = () => {
+      loadedCount++;
+      if (loadedCount >= totalImages && !isCancelled) {
+        setIsLoading(false);
+      }
+    };
 
     bgImages.forEach((src) => {
       const img = new Image();
-      img.onload = () => {
-        loadedCount++;
-        if (loadedCount >= totalImages && isMountedRef.current) {
-          setIsLoading(false);
-        }
-      };
-      img.onerror = () => {
-        loadedCount++;
-        if (loadedCount >= totalImages && isMountedRef.current) {
-          setIsLoading(false);
-        }
-      };
+      img.onload = checkComplete;
+      img.onerror = checkComplete;
       img.src = src;
     });
 
-    // Fallback timeout in case images fail to load
     const timeout = setTimeout(() => {
-      if (isMountedRef.current) {
+      if (!isCancelled) {
         setIsLoading(false);
       }
     }, 5000);
 
     return () => {
+      isCancelled = true;
       clearTimeout(timeout);
     };
   }, [isAuthenticated]);
 
-  // Cleanup on unmount
-  useEffect(() => {
-    isMountedRef.current = true;
-    return () => {
-      isMountedRef.current = false;
-    };
-  }, []);
-
-  const fetchBackground = useCallback(async () => {
-    if (isUpdatingRef.current || !isMountedRef.current) return;
+  // Fetch background from API
+  const fetchBackground = useCallback(async (isInitial = false) => {
+    if (isUpdatingRef.current) return;
     
     try {
-      const response = await fetch('/api/background');
-      if (response.ok && isMountedRef.current) {
+      const response = await fetch('/api/background', {
+        cache: 'no-store',
+        headers: {
+          'Cache-Control': 'no-cache',
+        }
+      });
+      
+      if (response.ok) {
         const data = await response.json();
-        setSelectedBg(data.backgroundId);
+        if (data.backgroundId && data.backgroundId !== selectedBgRef.current) {
+          setSelectedBg(data.backgroundId);
+        }
         setIsConnected(true);
       }
     } catch (error) {
       console.error('Failed to fetch background:', error);
-      if (isMountedRef.current) {
-        setIsConnected(false);
+      setIsConnected(false);
+    } finally {
+      if (isInitial) {
+        setIsFetchingInitial(false);
       }
     }
   }, []);
@@ -114,62 +176,98 @@ export default function Controller() {
   useEffect(() => {
     if (!isAuthenticated || isLoading) return;
 
-    fetchBackground();
-    const interval = setInterval(fetchBackground, POLL_INTERVAL);
+    // Initial fetch
+    fetchBackground(true);
+
+    // Set up polling
+    pollingRef.current = setInterval(() => fetchBackground(false), POLL_INTERVAL);
     
     return () => {
-      clearInterval(interval);
+      if (pollingRef.current) {
+        clearInterval(pollingRef.current);
+        pollingRef.current = null;
+      }
     };
-  }, [fetchBackground, isLoading, isAuthenticated]);
+  }, [isAuthenticated, isLoading, fetchBackground]);
 
   // Background image rotation
   useEffect(() => {
     if (!isAuthenticated || isLoading) return;
 
-    const interval = setInterval(() => {
-      if (isMountedRef.current) {
-        setCurrentBgImage((prev) => (prev + 1) % bgImages.length);
-      }
+    bgRotationRef.current = setInterval(() => {
+      setCurrentBgImage((prev) => (prev + 1) % bgImages.length);
     }, 5000);
     
-    return () => clearInterval(interval);
-  }, [isLoading, isAuthenticated, bgImages.length]);
+    return () => {
+      if (bgRotationRef.current) {
+        clearInterval(bgRotationRef.current);
+        bgRotationRef.current = null;
+      }
+    };
+  }, [isAuthenticated, isLoading, bgImages.length]);
 
-  const handleBackgroundSelect = async (bgId: string) => {
-    if (isUpdatingRef.current) return;
+  const handleBackgroundSelect = useCallback(async (bgId: string) => {
+    if (isUpdatingRef.current || bgId === selectedBgRef.current) return;
     
-    // Immediately update UI
-    setSelectedBg(bgId);
-    setIsUpdating(true);
+    // Set updating flag
     isUpdatingRef.current = true;
+    setIsUpdating(true);
+    setUpdatingBgId(bgId);
+    
+    // Optimistic update
+    setSelectedBg(bgId);
     
     try {
       const response = await fetch('/api/background', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'Cache-Control': 'no-cache',
+        },
         body: JSON.stringify({ backgroundId: bgId })
       });
       
-      if (!response.ok) throw new Error('Failed to update');
-      if (isMountedRef.current) {
-        setIsConnected(true);
+      if (!response.ok) {
+        throw new Error('Failed to update');
       }
+      
+      setIsConnected(true);
     } catch (error) {
       console.error('Failed to set background:', error);
-      if (isMountedRef.current) {
-        setIsConnected(false);
-      }
+      setIsConnected(false);
+      // Revert on error
+      await fetchBackground();
     } finally {
-      if (isMountedRef.current) {
-        setIsUpdating(false);
-      }
-      isUpdatingRef.current = false;
+      setIsUpdating(false);
+      setUpdatingBgId(null);
+      // Small delay before allowing next update
+      setTimeout(() => {
+        isUpdatingRef.current = false;
+      }, 300);
     }
-  };
+  }, [fetchBackground]);
+
+  const handleLock = useCallback(() => {
+    sessionStorage.removeItem('controller-auth');
+    setIsAuthenticated(false);
+    setPassword('');
+  }, []);
 
   const currentBg = backgrounds.find(bg => bg.id === selectedBg);
   const categoryBackgrounds = selectedCategory ? getBackgroundsByCategory(selectedCategory) : [];
   const selectedCategoryName = categories.find(c => c.id === selectedCategory)?.name;
+
+  // Initial auth check loading
+  if (isAuthenticated === null) {
+    return (
+      <div className="min-h-screen bg-gray-900 flex items-center justify-center">
+        <div className="text-center">
+          <div className="w-16 h-16 border-4 border-white/20 border-t-white rounded-full animate-spin mx-auto mb-4" />
+          <p className="text-white/60 text-sm">Initializing...</p>
+        </div>
+      </div>
+    );
+  }
 
   // Password screen
   if (!isAuthenticated) {
@@ -195,8 +293,9 @@ export default function Controller() {
                   setPasswordError(false);
                 }}
                 placeholder="Enter password"
-                className={`w-full px-4 py-3 bg-white/10 border rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-white/50 transition-all ${
-                  passwordError ? 'border-red-500 shake' : 'border-white/20'
+                disabled={isSubmitting}
+                className={`w-full px-4 py-3 bg-white/10 border rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-white/50 transition-all disabled:opacity-50 ${
+                  passwordError ? 'border-red-500 animate-shake' : 'border-white/20'
                 }`}
                 autoFocus
               />
@@ -207,9 +306,17 @@ export default function Controller() {
             
             <button
               type="submit"
-              className="w-full py-3 bg-white text-gray-900 font-semibold rounded-lg hover:bg-gray-100 transition-colors"
+              disabled={isSubmitting || !password}
+              className="w-full py-3 bg-white text-gray-900 font-semibold rounded-lg hover:bg-gray-100 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
             >
-              Unlock Controller
+              {isSubmitting ? (
+                <>
+                  <Loader2 className="w-5 h-5 animate-spin" />
+                  Unlocking...
+                </>
+              ) : (
+                'Unlock Controller'
+              )}
             </button>
           </form>
           
@@ -221,17 +328,6 @@ export default function Controller() {
             Back to Home
           </Link>
         </div>
-        
-        <style jsx>{`
-          @keyframes shake {
-            0%, 100% { transform: translateX(0); }
-            25% { transform: translateX(-5px); }
-            75% { transform: translateX(5px); }
-          }
-          .shake {
-            animation: shake 0.3s ease-in-out;
-          }
-        `}</style>
       </div>
     );
   }
@@ -241,8 +337,9 @@ export default function Controller() {
     return (
       <div className="min-h-screen bg-gray-900 flex items-center justify-center">
         <div className="text-center">
-          <div className="w-12 h-12 border-4 border-white/20 border-t-white rounded-full animate-spin mx-auto mb-4" />
-          <p className="text-white/60 text-sm">Loading...</p>
+          <div className="w-16 h-16 border-4 border-white/20 border-t-white rounded-full animate-spin mx-auto mb-4" />
+          <p className="text-white/60 text-sm">Loading assets...</p>
+          <p className="text-white/40 text-xs mt-2">Preparing your experience</p>
         </div>
       </div>
     );
@@ -286,7 +383,7 @@ export default function Controller() {
               />
             </div>
             <div className="flex items-center gap-6">
-              <div className={`flex items-center gap-2 px-3 py-1.5 rounded-full ${
+              <div className={`flex items-center gap-2 px-3 py-1.5 rounded-full transition-colors ${
                 isConnected ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'
               }`}>
                 {isConnected ? <Wifi className="w-4 h-4" /> : <WifiOff className="w-4 h-4" />}
@@ -296,11 +393,7 @@ export default function Controller() {
               </div>
               
               <button
-                onClick={() => {
-                  sessionStorage.removeItem('controller-auth');
-                  setIsAuthenticated(false);
-                  setPassword('');
-                }}
+                onClick={handleLock}
                 className="flex items-center gap-2 text-gray-300 hover:text-white text-sm font-medium transition-colors"
               >
                 <Lock className="w-4 h-4" />
@@ -324,11 +417,21 @@ export default function Controller() {
             <div className="flex items-center gap-2 mb-4">
               <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse" />
               <h2 className="text-lg font-semibold text-white">Currently Displaying</h2>
+              {isFetchingInitial && (
+                <Loader2 className="w-4 h-4 text-white/50 animate-spin ml-2" />
+              )}
             </div>
             
             <div className="bg-white/10 backdrop-blur-md rounded-xl overflow-hidden border border-white/20 shadow-2xl">
               <div className="relative w-full aspect-video bg-black">
-                {currentBg?.type === 'video' ? (
+                {isFetchingInitial ? (
+                  <div className="absolute inset-0 flex items-center justify-center">
+                    <div className="text-center">
+                      <Loader2 className="w-10 h-10 text-white/50 animate-spin mx-auto mb-2" />
+                      <p className="text-white/50 text-sm">Loading display...</p>
+                    </div>
+                  </div>
+                ) : currentBg?.type === 'video' ? (
                   <video
                     key={currentBg.src}
                     autoPlay
@@ -340,10 +443,11 @@ export default function Controller() {
                     <source src={currentBg.src} type="video/mp4" />
                   </video>
                 ) : currentBg?.type === 'image' ? (
-                  <img
-                    src={currentBg.src}
+                  <LoadingImage
+                    src={currentBg.src || ''}
                     alt={currentBg.name}
                     className="w-full h-full object-contain"
+                    containerClassName="w-full h-full"
                   />
                 ) : (
                   <div 
@@ -351,9 +455,25 @@ export default function Controller() {
                     style={{ background: currentBg?.style }}
                   />
                 )}
+                
+                {/* Updating overlay */}
+                {isUpdating && (
+                  <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
+                    <div className="text-center">
+                      <Loader2 className="w-8 h-8 text-white animate-spin mx-auto mb-2" />
+                      <p className="text-white text-sm">Updating display...</p>
+                    </div>
+                  </div>
+                )}
               </div>
-              <div className="px-6 py-4 bg-black/40 backdrop-blur-sm border-t border-white/10">
+              <div className="px-6 py-4 bg-black/40 backdrop-blur-sm border-t border-white/10 flex items-center justify-between">
                 <p className="font-medium text-white">{currentBg?.name}</p>
+                {isUpdating && (
+                  <span className="text-white/50 text-sm flex items-center gap-2">
+                    <Loader2 className="w-3 h-3 animate-spin" />
+                    Syncing...
+                  </span>
+                )}
               </div>
             </div>
           </div>
@@ -361,7 +481,6 @@ export default function Controller() {
           {/* Selection Area */}
           {selectedCategory === null ? (
             <>
-              {/* Movie Categories */}
               <h2 className="text-lg font-semibold text-white mb-4">Select Movie Theme</h2>
               <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
                 {categories.map((category) => {
@@ -376,11 +495,11 @@ export default function Controller() {
                     >
                       <div className="relative w-full aspect-video bg-black">
                         {firstBg?.type === 'image' && (
-                          <img
-                            src={firstBg.src}
+                          <LoadingImage
+                            src={firstBg.src || ''}
                             alt={category.name}
-                            loading="lazy"
                             className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                            containerClassName="w-full h-full"
                           />
                         )}
                         <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent" />
@@ -397,11 +516,11 @@ export default function Controller() {
             </>
           ) : (
             <>
-              {/* Image Selection within Category */}
               <div className="flex items-center gap-4 mb-4">
                 <button
                   onClick={() => setSelectedCategory(null)}
-                  className="flex items-center gap-2 text-gray-300 hover:text-white transition-colors"
+                  disabled={isUpdating}
+                  className="flex items-center gap-2 text-gray-300 hover:text-white transition-colors disabled:opacity-50"
                 >
                   <ChevronLeft className="w-5 h-5" />
                   <span className="font-medium">Back to Movies</span>
@@ -410,44 +529,73 @@ export default function Controller() {
               </div>
 
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                {categoryBackgrounds.map((bg) => (
-                  <button
-                    key={bg.id}
-                    onClick={() => handleBackgroundSelect(bg.id)}
-                    disabled={isUpdating}
-                    className={`group relative rounded-lg overflow-hidden transition-all active:scale-[0.98] ${
-                      selectedBg === bg.id 
-                        ? 'ring-2 ring-white shadow-2xl shadow-white/20' 
-                        : 'ring-1 ring-white/30 hover:ring-white/60'
-                    } ${isUpdating ? 'opacity-50 cursor-wait' : ''}`}
-                  >
-                    <div className="relative w-full aspect-video bg-black">
-                      <img
-                        src={bg.src}
-                        alt={bg.name}
-                        loading="lazy"
-                        className="w-full h-full object-cover"
-                      />
-                      
-                      {selectedBg === bg.id && (
-                        <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
-                          <div className="bg-white rounded-full p-2">
-                            <Check className="w-6 h-6 text-gray-900" />
+                {categoryBackgrounds.map((bg) => {
+                  const isSelected = selectedBg === bg.id;
+                  const isThisUpdating = updatingBgId === bg.id;
+                  
+                  return (
+                    <button
+                      key={bg.id}
+                      onClick={() => handleBackgroundSelect(bg.id)}
+                      disabled={isUpdating}
+                      className={`group relative rounded-lg overflow-hidden transition-all active:scale-[0.98] ${
+                        isSelected 
+                          ? 'ring-2 ring-white shadow-2xl shadow-white/20' 
+                          : 'ring-1 ring-white/30 hover:ring-white/60'
+                      } ${isUpdating && !isThisUpdating ? 'opacity-50' : ''}`}
+                    >
+                      <div className="relative w-full aspect-video bg-black">
+                        <LoadingImage
+                          src={bg.src || ''}
+                          alt={bg.name}
+                          className="w-full h-full object-cover"
+                          containerClassName="w-full h-full"
+                        />
+                        
+                        {/* Selected overlay */}
+                        {isSelected && !isThisUpdating && (
+                          <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
+                            <div className="bg-white rounded-full p-2">
+                              <Check className="w-6 h-6 text-gray-900" />
+                            </div>
                           </div>
-                        </div>
-                      )}
-                    </div>
-                    
-                    <div className="px-3 py-2 bg-black/60 backdrop-blur-sm border-t border-white/10">
-                      <p className="text-sm font-medium text-white truncate">{bg.name}</p>
-                    </div>
-                  </button>
-                ))}
+                        )}
+                        
+                        {/* Loading overlay for this specific item */}
+                        {isThisUpdating && (
+                          <div className="absolute inset-0 bg-black/60 flex items-center justify-center">
+                            <div className="text-center">
+                              <Loader2 className="w-8 h-8 text-white animate-spin mx-auto" />
+                              <p className="text-white text-xs mt-2">Applying...</p>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                      
+                      <div className="px-3 py-2 bg-black/60 backdrop-blur-sm border-t border-white/10 flex items-center justify-between">
+                        <p className="text-sm font-medium text-white truncate">{bg.name}</p>
+                        {isThisUpdating && (
+                          <Loader2 className="w-3 h-3 text-white/50 animate-spin flex-shrink-0" />
+                        )}
+                      </div>
+                    </button>
+                  );
+                })}
               </div>
             </>
           )}
         </div>
       </div>
+      
+      {/* Global updating toast */}
+      {isUpdating && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50">
+          <div className="bg-black/80 backdrop-blur-md px-6 py-3 rounded-full border border-white/20 flex items-center gap-3 shadow-2xl">
+            <Loader2 className="w-5 h-5 text-white animate-spin" />
+            <span className="text-white text-sm font-medium">Updating display...</span>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
