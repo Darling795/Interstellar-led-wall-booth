@@ -1,56 +1,147 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, Check, Wifi, WifiOff, ChevronLeft } from 'lucide-react';
+import { ArrowLeft, Check, Wifi, WifiOff, ChevronLeft, Lock } from 'lucide-react';
 import { backgrounds, categories, getBackgroundsByCategory } from '../background';
 
-const POLL_INTERVAL = 2000; // Increased from 1000 to reduce API calls
+const POLL_INTERVAL = 2000;
+const PASSWORD = '12345';
 
 export default function Controller() {
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [password, setPassword] = useState('');
+  const [passwordError, setPasswordError] = useState(false);
+  
   const [selectedBg, setSelectedBg] = useState(backgrounds[0].id);
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [isConnected, setIsConnected] = useState(true);
   const [isUpdating, setIsUpdating] = useState(false);
   const [currentBgImage, setCurrentBgImage] = useState(0);
+  const [isLoading, setIsLoading] = useState(true);
+  
+  const isUpdatingRef = useRef(false);
+  const isMountedRef = useRef(true);
   
   const bgImages = [
     '/backgroundimage-1.jpg',
     '/backgroundimage-2.jpg'
   ];
 
+  // Check if already authenticated (session storage)
+  useEffect(() => {
+    const savedAuth = sessionStorage.getItem('controller-auth');
+    if (savedAuth === 'true') {
+      setIsAuthenticated(true);
+    }
+  }, []);
+
+  const handlePasswordSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (password === PASSWORD) {
+      setIsAuthenticated(true);
+      setPasswordError(false);
+      sessionStorage.setItem('controller-auth', 'true');
+    } else {
+      setPasswordError(true);
+      setPassword('');
+    }
+  };
+
+  // Preload background images
+  useEffect(() => {
+    if (!isAuthenticated) return;
+
+    let loadedCount = 0;
+    const totalImages = bgImages.length;
+
+    bgImages.forEach((src) => {
+      const img = new Image();
+      img.onload = () => {
+        loadedCount++;
+        if (loadedCount >= totalImages && isMountedRef.current) {
+          setIsLoading(false);
+        }
+      };
+      img.onerror = () => {
+        loadedCount++;
+        if (loadedCount >= totalImages && isMountedRef.current) {
+          setIsLoading(false);
+        }
+      };
+      img.src = src;
+    });
+
+    // Fallback timeout in case images fail to load
+    const timeout = setTimeout(() => {
+      if (isMountedRef.current) {
+        setIsLoading(false);
+      }
+    }, 5000);
+
+    return () => {
+      clearTimeout(timeout);
+    };
+  }, [isAuthenticated]);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
+
   const fetchBackground = useCallback(async () => {
-    if (isUpdating) return; // Don't fetch while updating
+    if (isUpdatingRef.current || !isMountedRef.current) return;
+    
     try {
       const response = await fetch('/api/background');
-      if (response.ok) {
+      if (response.ok && isMountedRef.current) {
         const data = await response.json();
         setSelectedBg(data.backgroundId);
         setIsConnected(true);
       }
     } catch (error) {
       console.error('Failed to fetch background:', error);
-      setIsConnected(false);
+      if (isMountedRef.current) {
+        setIsConnected(false);
+      }
     }
-  }, [isUpdating]);
-
-  useEffect(() => {
-    fetchBackground();
-    const interval = setInterval(fetchBackground, POLL_INTERVAL);
-    return () => clearInterval(interval);
-  }, [fetchBackground]);
-
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setCurrentBgImage((prev) => (prev + 1) % bgImages.length);
-    }, 5000);
-    return () => clearInterval(interval);
   }, []);
 
+  // Polling for background sync
+  useEffect(() => {
+    if (!isAuthenticated || isLoading) return;
+
+    fetchBackground();
+    const interval = setInterval(fetchBackground, POLL_INTERVAL);
+    
+    return () => {
+      clearInterval(interval);
+    };
+  }, [fetchBackground, isLoading, isAuthenticated]);
+
+  // Background image rotation
+  useEffect(() => {
+    if (!isAuthenticated || isLoading) return;
+
+    const interval = setInterval(() => {
+      if (isMountedRef.current) {
+        setCurrentBgImage((prev) => (prev + 1) % bgImages.length);
+      }
+    }, 5000);
+    
+    return () => clearInterval(interval);
+  }, [isLoading, isAuthenticated, bgImages.length]);
+
   const handleBackgroundSelect = async (bgId: string) => {
+    if (isUpdatingRef.current) return;
+    
     // Immediately update UI
     setSelectedBg(bgId);
     setIsUpdating(true);
+    isUpdatingRef.current = true;
     
     try {
       const response = await fetch('/api/background', {
@@ -60,18 +151,102 @@ export default function Controller() {
       });
       
       if (!response.ok) throw new Error('Failed to update');
-      setIsConnected(true);
+      if (isMountedRef.current) {
+        setIsConnected(true);
+      }
     } catch (error) {
       console.error('Failed to set background:', error);
-      setIsConnected(false);
+      if (isMountedRef.current) {
+        setIsConnected(false);
+      }
     } finally {
-      setIsUpdating(false);
+      if (isMountedRef.current) {
+        setIsUpdating(false);
+      }
+      isUpdatingRef.current = false;
     }
   };
 
   const currentBg = backgrounds.find(bg => bg.id === selectedBg);
   const categoryBackgrounds = selectedCategory ? getBackgroundsByCategory(selectedCategory) : [];
   const selectedCategoryName = categories.find(c => c.id === selectedCategory)?.name;
+
+  // Password screen
+  if (!isAuthenticated) {
+    return (
+      <div className="min-h-screen bg-gray-900 flex items-center justify-center p-4">
+        <div className="bg-white/10 backdrop-blur-md rounded-2xl p-8 w-full max-w-md border border-white/20">
+          <div className="flex justify-center mb-6">
+            <div className="bg-white/20 rounded-full p-4">
+              <Lock className="w-8 h-8 text-white" />
+            </div>
+          </div>
+          
+          <h1 className="text-2xl font-bold text-white text-center mb-2">Controller Access</h1>
+          <p className="text-gray-400 text-center mb-6">Enter password to access the controller</p>
+          
+          <form onSubmit={handlePasswordSubmit}>
+            <div className="mb-4">
+              <input
+                type="password"
+                value={password}
+                onChange={(e) => {
+                  setPassword(e.target.value);
+                  setPasswordError(false);
+                }}
+                placeholder="Enter password"
+                className={`w-full px-4 py-3 bg-white/10 border rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-white/50 transition-all ${
+                  passwordError ? 'border-red-500 shake' : 'border-white/20'
+                }`}
+                autoFocus
+              />
+              {passwordError && (
+                <p className="text-red-400 text-sm mt-2">Incorrect password. Please try again.</p>
+              )}
+            </div>
+            
+            <button
+              type="submit"
+              className="w-full py-3 bg-white text-gray-900 font-semibold rounded-lg hover:bg-gray-100 transition-colors"
+            >
+              Unlock Controller
+            </button>
+          </form>
+          
+          <Link 
+            href="/"
+            className="flex items-center justify-center gap-2 text-gray-400 hover:text-white text-sm mt-6 transition-colors"
+          >
+            <ArrowLeft className="w-4 h-4" />
+            Back to Home
+          </Link>
+        </div>
+        
+        <style jsx>{`
+          @keyframes shake {
+            0%, 100% { transform: translateX(0); }
+            25% { transform: translateX(-5px); }
+            75% { transform: translateX(5px); }
+          }
+          .shake {
+            animation: shake 0.3s ease-in-out;
+          }
+        `}</style>
+      </div>
+    );
+  }
+
+  // Loading screen
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-gray-900 flex items-center justify-center">
+        <div className="text-center">
+          <div className="w-12 h-12 border-4 border-white/20 border-t-white rounded-full animate-spin mx-auto mb-4" />
+          <p className="text-white/60 text-sm">Loading...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="relative min-h-screen">
@@ -119,6 +294,18 @@ export default function Controller() {
                   {isConnected ? 'Connected' : 'Disconnected'}
                 </span>
               </div>
+              
+              <button
+                onClick={() => {
+                  sessionStorage.removeItem('controller-auth');
+                  setIsAuthenticated(false);
+                  setPassword('');
+                }}
+                className="flex items-center gap-2 text-gray-300 hover:text-white text-sm font-medium transition-colors"
+              >
+                <Lock className="w-4 h-4" />
+                Lock
+              </button>
               
               <Link 
                 href="/"
