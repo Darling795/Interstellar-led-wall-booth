@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, memo } from 'react';
 import Link from 'next/link';
 import { ArrowLeft, Check, Wifi, WifiOff, ChevronLeft, Lock, Loader2 } from 'lucide-react';
 import { backgrounds, categories, getBackgroundsByCategory } from '../background';
@@ -13,8 +13,11 @@ const Skeleton = ({ className = '' }: { className?: string }) => (
   <div className={`animate-pulse bg-white/10 rounded ${className}`} />
 );
 
-// Image with loading state
-const LoadingImage = ({ 
+// Cache to track which images have been loaded globally
+const imageLoadCache = new Set<string>();
+
+// Memoized Image component that persists load state
+const LoadingImage = memo(({ 
   src, 
   alt, 
   className = '',
@@ -25,8 +28,34 @@ const LoadingImage = ({
   className?: string;
   containerClassName?: string;
 }) => {
-  const [isLoaded, setIsLoaded] = useState(false);
+  // Check if image was already loaded in a previous render
+  const [isLoaded, setIsLoaded] = useState(() => imageLoadCache.has(src));
   const [hasError, setHasError] = useState(false);
+  const imgRef = useRef<HTMLImageElement>(null);
+
+  useEffect(() => {
+    // If already in cache, mark as loaded
+    if (imageLoadCache.has(src)) {
+      setIsLoaded(true);
+      return;
+    }
+
+    // Check if the image is already cached by the browser
+    const img = imgRef.current;
+    if (img && img.complete && img.naturalWidth > 0) {
+      imageLoadCache.add(src);
+      setIsLoaded(true);
+    }
+  }, [src]);
+
+  const handleLoad = useCallback(() => {
+    imageLoadCache.add(src);
+    setIsLoaded(true);
+  }, [src]);
+
+  const handleError = useCallback(() => {
+    setHasError(true);
+  }, []);
 
   return (
     <div className={`relative ${containerClassName}`}>
@@ -41,15 +70,142 @@ const LoadingImage = ({
         </div>
       )}
       <img
+        ref={imgRef}
         src={src}
         alt={alt}
         className={`${className} ${isLoaded ? 'opacity-100' : 'opacity-0'} transition-opacity duration-300`}
-        onLoad={() => setIsLoaded(true)}
-        onError={() => setHasError(true)}
+        onLoad={handleLoad}
+        onError={handleError}
+        loading="lazy"
+        decoding="async"
       />
     </div>
   );
-};
+}, (prevProps, nextProps) => {
+  // Custom comparison - only re-render if src changes
+  return prevProps.src === nextProps.src;
+});
+
+LoadingImage.displayName = 'LoadingImage';
+
+// Memoized background item component to prevent unnecessary re-renders
+const BackgroundItem = memo(({ 
+  bg, 
+  isSelected, 
+  isThisUpdating, 
+  isUpdating,
+  onSelect 
+}: {
+  bg: typeof backgrounds[0];
+  isSelected: boolean;
+  isThisUpdating: boolean;
+  isUpdating: boolean;
+  onSelect: (id: string) => void;
+}) => {
+  const handleClick = useCallback(() => {
+    onSelect(bg.id);
+  }, [bg.id, onSelect]);
+
+  return (
+    <button
+      onClick={handleClick}
+      disabled={isUpdating}
+      className={`group relative rounded-lg overflow-hidden transition-all active:scale-[0.98] ${
+        isSelected 
+          ? 'ring-2 ring-white shadow-2xl shadow-white/20' 
+          : 'ring-1 ring-white/30 hover:ring-white/60'
+      } ${isUpdating && !isThisUpdating ? 'opacity-50' : ''}`}
+    >
+      <div className="relative w-full aspect-video bg-black">
+        <LoadingImage
+          src={bg.src || ''}
+          alt={bg.name}
+          className="w-full h-full object-cover"
+          containerClassName="w-full h-full"
+        />
+        
+        {/* Selected overlay */}
+        {isSelected && !isThisUpdating && (
+          <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
+            <div className="bg-white rounded-full p-2">
+              <Check className="w-6 h-6 text-gray-900" />
+            </div>
+          </div>
+        )}
+        
+        {/* Loading overlay for this specific item */}
+        {isThisUpdating && (
+          <div className="absolute inset-0 bg-black/60 flex items-center justify-center">
+            <div className="text-center">
+              <Loader2 className="w-8 h-8 text-white animate-spin mx-auto" />
+              <p className="text-white text-xs mt-2">Applying...</p>
+            </div>
+          </div>
+        )}
+      </div>
+      
+      <div className="px-3 py-2 bg-black/60 backdrop-blur-sm border-t border-white/10 flex items-center justify-between">
+        <p className="text-sm font-medium text-white truncate">{bg.name}</p>
+        {isThisUpdating && (
+          <Loader2 className="w-3 h-3 text-white/50 animate-spin flex-shrink-0" />
+        )}
+      </div>
+    </button>
+  );
+}, (prevProps, nextProps) => {
+  // Only re-render if these specific props change
+  return (
+    prevProps.bg.id === nextProps.bg.id &&
+    prevProps.isSelected === nextProps.isSelected &&
+    prevProps.isThisUpdating === nextProps.isThisUpdating &&
+    prevProps.isUpdating === nextProps.isUpdating
+  );
+});
+
+BackgroundItem.displayName = 'BackgroundItem';
+
+// Memoized category item component
+const CategoryItem = memo(({
+  category,
+  firstBg,
+  bgCount,
+  onSelect
+}: {
+  category: typeof categories[0];
+  firstBg: typeof backgrounds[0] | undefined;
+  bgCount: number;
+  onSelect: (id: string) => void;
+}) => {
+  const handleClick = useCallback(() => {
+    onSelect(category.id);
+  }, [category.id, onSelect]);
+
+  return (
+    <button
+      onClick={handleClick}
+      className="group relative rounded-lg overflow-hidden transition-all ring-1 ring-white/30 hover:ring-white/60 hover:scale-[1.02] active:scale-[0.98]"
+    >
+      <div className="relative w-full aspect-video bg-black">
+        {firstBg?.type === 'image' && (
+          <LoadingImage
+            src={firstBg.src || ''}
+            alt={category.name}
+            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+            containerClassName="w-full h-full"
+          />
+        )}
+        <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent" />
+      </div>
+      
+      <div className="absolute bottom-0 left-0 right-0 px-4 py-3">
+        <p className="text-base font-semibold text-white">{category.name}</p>
+        <p className="text-xs text-gray-300">{bgCount} backgrounds</p>
+      </div>
+    </button>
+  );
+});
+
+CategoryItem.displayName = 'CategoryItem';
 
 export default function Controller() {
   const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null);
@@ -70,6 +226,7 @@ export default function Controller() {
   const selectedBgRef = useRef(selectedBg);
   const pollingRef = useRef<NodeJS.Timeout | null>(null);
   const bgRotationRef = useRef<NodeJS.Timeout | null>(null);
+  const mountedRef = useRef(true);
   
   const bgImages = [
     '/backgroundimage-1.jpg',
@@ -81,12 +238,22 @@ export default function Controller() {
     selectedBgRef.current = selectedBg;
   }, [selectedBg]);
 
+  // Track mounted state
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+
   // Check authentication on mount
   useEffect(() => {
     // Small delay to prevent flash
     const timer = setTimeout(() => {
       const savedAuth = sessionStorage.getItem('controller-auth');
-      setIsAuthenticated(savedAuth === 'true');
+      if (mountedRef.current) {
+        setIsAuthenticated(savedAuth === 'true');
+      }
     }, 100);
     return () => clearTimeout(timer);
   }, []);
@@ -119,7 +286,7 @@ export default function Controller() {
 
     const checkComplete = () => {
       loadedCount++;
-      if (loadedCount >= totalImages && !isCancelled) {
+      if (loadedCount >= totalImages && !isCancelled && mountedRef.current) {
         setIsLoading(false);
       }
     };
@@ -132,7 +299,7 @@ export default function Controller() {
     });
 
     const timeout = setTimeout(() => {
-      if (!isCancelled) {
+      if (!isCancelled && mountedRef.current) {
         setIsLoading(false);
       }
     }, 5000);
@@ -143,9 +310,9 @@ export default function Controller() {
     };
   }, [isAuthenticated]);
 
-  // Fetch background from API
+  // Fetch background from API - use useCallback with stable dependencies
   const fetchBackground = useCallback(async (isInitial = false) => {
-    if (isUpdatingRef.current) return;
+    if (isUpdatingRef.current || !mountedRef.current) return;
     
     try {
       const response = await fetch('/api/background', {
@@ -155,7 +322,7 @@ export default function Controller() {
         }
       });
       
-      if (response.ok) {
+      if (response.ok && mountedRef.current) {
         const data = await response.json();
         if (data.backgroundId && data.backgroundId !== selectedBgRef.current) {
           setSelectedBg(data.backgroundId);
@@ -164,9 +331,11 @@ export default function Controller() {
       }
     } catch (error) {
       console.error('Failed to fetch background:', error);
-      setIsConnected(false);
+      if (mountedRef.current) {
+        setIsConnected(false);
+      }
     } finally {
-      if (isInitial) {
+      if (isInitial && mountedRef.current) {
         setIsFetchingInitial(false);
       }
     }
@@ -195,7 +364,9 @@ export default function Controller() {
     if (!isAuthenticated || isLoading) return;
 
     bgRotationRef.current = setInterval(() => {
-      setCurrentBgImage((prev) => (prev + 1) % bgImages.length);
+      if (mountedRef.current) {
+        setCurrentBgImage((prev) => (prev + 1) % bgImages.length);
+      }
     }, 5000);
     
     return () => {
@@ -231,21 +402,35 @@ export default function Controller() {
         throw new Error('Failed to update');
       }
       
-      setIsConnected(true);
+      if (mountedRef.current) {
+        setIsConnected(true);
+      }
     } catch (error) {
       console.error('Failed to set background:', error);
-      setIsConnected(false);
-      // Revert on error
-      await fetchBackground();
+      if (mountedRef.current) {
+        setIsConnected(false);
+        // Revert on error
+        await fetchBackground();
+      }
     } finally {
-      setIsUpdating(false);
-      setUpdatingBgId(null);
+      if (mountedRef.current) {
+        setIsUpdating(false);
+        setUpdatingBgId(null);
+      }
       // Small delay before allowing next update
       setTimeout(() => {
         isUpdatingRef.current = false;
       }, 300);
     }
   }, [fetchBackground]);
+
+  const handleCategorySelect = useCallback((categoryId: string) => {
+    setSelectedCategory(categoryId);
+  }, []);
+
+  const handleBackToCategories = useCallback(() => {
+    setSelectedCategory(null);
+  }, []);
 
   const handleLock = useCallback(() => {
     sessionStorage.removeItem('controller-auth');
@@ -488,28 +673,13 @@ export default function Controller() {
                   const firstBg = categoryBgs[0];
                   
                   return (
-                    <button
+                    <CategoryItem
                       key={category.id}
-                      onClick={() => setSelectedCategory(category.id)}
-                      className="group relative rounded-lg overflow-hidden transition-all ring-1 ring-white/30 hover:ring-white/60 hover:scale-[1.02] active:scale-[0.98]"
-                    >
-                      <div className="relative w-full aspect-video bg-black">
-                        {firstBg?.type === 'image' && (
-                          <LoadingImage
-                            src={firstBg.src || ''}
-                            alt={category.name}
-                            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                            containerClassName="w-full h-full"
-                          />
-                        )}
-                        <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent" />
-                      </div>
-                      
-                      <div className="absolute bottom-0 left-0 right-0 px-4 py-3">
-                        <p className="text-base font-semibold text-white">{category.name}</p>
-                        <p className="text-xs text-gray-300">{categoryBgs.length} backgrounds</p>
-                      </div>
-                    </button>
+                      category={category}
+                      firstBg={firstBg}
+                      bgCount={categoryBgs.length}
+                      onSelect={handleCategorySelect}
+                    />
                   );
                 })}
               </div>
@@ -518,7 +688,7 @@ export default function Controller() {
             <>
               <div className="flex items-center gap-4 mb-4">
                 <button
-                  onClick={() => setSelectedCategory(null)}
+                  onClick={handleBackToCategories}
                   disabled={isUpdating}
                   className="flex items-center gap-2 text-gray-300 hover:text-white transition-colors disabled:opacity-50"
                 >
@@ -529,58 +699,16 @@ export default function Controller() {
               </div>
 
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                {categoryBackgrounds.map((bg) => {
-                  const isSelected = selectedBg === bg.id;
-                  const isThisUpdating = updatingBgId === bg.id;
-                  
-                  return (
-                    <button
-                      key={bg.id}
-                      onClick={() => handleBackgroundSelect(bg.id)}
-                      disabled={isUpdating}
-                      className={`group relative rounded-lg overflow-hidden transition-all active:scale-[0.98] ${
-                        isSelected 
-                          ? 'ring-2 ring-white shadow-2xl shadow-white/20' 
-                          : 'ring-1 ring-white/30 hover:ring-white/60'
-                      } ${isUpdating && !isThisUpdating ? 'opacity-50' : ''}`}
-                    >
-                      <div className="relative w-full aspect-video bg-black">
-                        <LoadingImage
-                          src={bg.src || ''}
-                          alt={bg.name}
-                          className="w-full h-full object-cover"
-                          containerClassName="w-full h-full"
-                        />
-                        
-                        {/* Selected overlay */}
-                        {isSelected && !isThisUpdating && (
-                          <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
-                            <div className="bg-white rounded-full p-2">
-                              <Check className="w-6 h-6 text-gray-900" />
-                            </div>
-                          </div>
-                        )}
-                        
-                        {/* Loading overlay for this specific item */}
-                        {isThisUpdating && (
-                          <div className="absolute inset-0 bg-black/60 flex items-center justify-center">
-                            <div className="text-center">
-                              <Loader2 className="w-8 h-8 text-white animate-spin mx-auto" />
-                              <p className="text-white text-xs mt-2">Applying...</p>
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                      
-                      <div className="px-3 py-2 bg-black/60 backdrop-blur-sm border-t border-white/10 flex items-center justify-between">
-                        <p className="text-sm font-medium text-white truncate">{bg.name}</p>
-                        {isThisUpdating && (
-                          <Loader2 className="w-3 h-3 text-white/50 animate-spin flex-shrink-0" />
-                        )}
-                      </div>
-                    </button>
-                  );
-                })}
+                {categoryBackgrounds.map((bg) => (
+                  <BackgroundItem
+                    key={bg.id}
+                    bg={bg}
+                    isSelected={selectedBg === bg.id}
+                    isThisUpdating={updatingBgId === bg.id}
+                    isUpdating={isUpdating}
+                    onSelect={handleBackgroundSelect}
+                  />
+                ))}
               </div>
             </>
           )}
@@ -592,7 +720,7 @@ export default function Controller() {
         <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50">
           <div className="bg-black/80 backdrop-blur-md px-6 py-3 rounded-full border border-white/20 flex items-center gap-3 shadow-2xl">
             <Loader2 className="w-5 h-5 text-white animate-spin" />
-            <span className="text-white text-sm font-medium">Updating display...</span>
+            <span className="text-white text-sm font-medium">Loading...</span>
           </div>
         </div>
       )}
